@@ -2,6 +2,10 @@ import { NextRequest, NextResponse } from "next/server";
 import convert from "heic-convert";
 import { getFileMeta, getOriginalFileBuffer, getOriginalFileStream } from "@/lib/google-drive";
 
+// Must run on the Node.js runtime (not Edge) — heic-convert's WASM decoder
+// and Buffer usage require it.
+export const runtime = "nodejs";
+
 // Serves a photo inline for the lightbox's full-resolution view (as opposed
 // to /api/download, which forces a save-as-file download of the untouched
 // original). Most browsers — everything except Safari/iOS — cannot decode

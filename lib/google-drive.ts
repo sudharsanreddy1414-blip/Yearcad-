@@ -116,6 +116,42 @@ export async function listPhotos(): Promise<DrivePhoto[]> {
 }
 
 /**
+ * Lightweight metadata-only fetch (no bytes) — used to decide how to serve
+ * a file (e.g. whether it needs HEIC→JPEG conversion) before paying for a
+ * full download.
+ */
+export async function getFileMeta(
+  fileId: string
+): Promise<{ name: string; mimeType: string; size?: string }> {
+  const drive = getDriveClient();
+  const res = await drive.files.get({
+    fileId,
+    fields: "name, mimeType, size",
+    supportsAllDrives: true,
+  });
+  return {
+    name: res.data.name ?? fileId,
+    mimeType: res.data.mimeType ?? "application/octet-stream",
+    size: res.data.size ?? undefined,
+  };
+}
+
+/**
+ * Fetches the ORIGINAL file fully into memory. Used only when the bytes
+ * need to be transformed server-side (HEIC→JPEG conversion) before they
+ * can be sent to the browser — the download endpoint still streams the
+ * untouched original instead of using this.
+ */
+export async function getOriginalFileBuffer(fileId: string): Promise<Buffer> {
+  const drive = getDriveClient();
+  const res = await drive.files.get(
+    { fileId, alt: "media", supportsAllDrives: true },
+    { responseType: "arraybuffer" }
+  );
+  return Buffer.from(res.data as ArrayBuffer);
+}
+
+/**
  * Streams the ORIGINAL file bytes for a given Drive file id — this is the
  * true source file, not a thumbnail or a re-encoded preview. Used by both
  * the full-resolution lightbox view and the download endpoint.

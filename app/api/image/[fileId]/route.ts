@@ -1,11 +1,24 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getOriginalFileStream } from "@/lib/google-drive";
+import convert from "heic-convert";
+import { getFileMeta, getOriginalFileBuffer, getOriginalFileStream } from "@/lib/google-drive";
 
-// Serves the original file inline (for the lightbox's full-resolution view),
-// as opposed to /api/download which forces a save-as-file download. Same
-// underlying bytes — full quality either way — just a different
-// Content-Disposition and long cache lifetime since a given Drive file id's
-// bytes don't change for a fixed trip archive.
+// Serves a photo inline for the lightbox's full-resolution view (as opposed
+// to /api/download, which forces a save-as-file download of the untouched
+// original). Most browsers — everything except Safari/iOS — cannot decode
+// HEIC/HEIF, the format iPhones save photos in by default, so those files
+// are converted to JPEG here before being sent. Every other format is
+// streamed through unchanged at full original quality.
+const HEIC_MIME_TYPES = new Set([
+  "image/heic",
+  "image/heif",
+  "image/heic-sequence",
+  "image/heif-sequence",
+]);
+
+function isHeic(mimeType: string, name: string): boolean {
+  return HEIC_MIME_TYPES.has(mimeType.toLowerCase()) || /\.hei[cf]$/i.test(name);
+}
+
 export async function GET(
   _req: NextRequest,
   { params }: { params: Promise<{ fileId: string }> }
@@ -13,8 +26,25 @@ export async function GET(
   const { fileId } = await params;
 
   try {
-    const { stream, mimeType } = await getOriginalFileStream(fileId);
+    const meta = await getFileMeta(fileId);
 
+    if (isHeic(meta.mimeType, meta.name)) {
+      const original = await getOriginalFileBuffer(fileId);
+      const jpegBuffer = (await convert({
+        buffer: original,
+        format: "JPEG",
+        quality: 0.92,
+      })) as Buffer;
+
+      return new NextResponse(new Uint8Array(jpegBuffer), {
+        headers: {
+          "Content-Type": "image/jpeg",
+          "Cache-Control": "public, max-age=31536000, immutable",
+        },
+      });
+    }
+
+    const { stream, mimeType } = await getOriginalFileStream(fileId);
     const headers = new Headers({
       "Content-Type": mimeType,
       "Cache-Control": "public, max-age=31536000, immutable",
